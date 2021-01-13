@@ -57,8 +57,9 @@ for src_file in %%select%%; do
     name=$(echo "${src_file%.*}")
     dst_file="${name}.h265.mp4"
     echo "Processing \"${src_file}\" => \"${dst_file}\""
+    # https://stackoverflow.com/questions/49686244/ffmpeg-too-many-packets-buffered-for-output-stream-01
     ffmpeg -stats -i "${src_file}" \
-      -c:v libx265 -crf 22 -c:a aac -b:a 128k "${dst_file}"
+      -c:v libx265 -crf 22 -c:a aac -b:a 128k  -max_muxing_queue_size 9999 "${dst_file}"
 
     echo "Processed: \"${src_file}\" =>  \"${dst_file}\"" >> ${logfile}
 
@@ -78,3 +79,4 @@ chmod +x "${batch_temp_full}" && \
 docker run -d --volume "${dir}":/tmp -w="/tmp" --rm \
   --user "${uid}":"${gid}" \
   --entrypoint /bin/sh "${image}" --command "./${batch_temp}"
+
