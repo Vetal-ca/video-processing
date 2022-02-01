@@ -40,7 +40,7 @@ if [ -z ${dir+set} ]; then
 fi
 
 batch_temp="batch.sh" && \
-image="docker-registry.vetals.com/ffmpeg:4.1.3" && \
+image="cloud.canister.io:5000/vetal/ffmpeg:4.1.3" && \
 
 uid=$(id -u $(whoami)) && \
 gid=$(id -g $(whoami)) && \
