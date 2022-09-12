@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 
+#set -o errexit
+set -o nounset
+set -o pipefail
+
 usage() {
-  echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext"
+  echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext -r|--rescale 1920"
   exit 1
 }
 
-OPTS=$(getopt -o s:d: --long select:,dir: -n 'parse-options' -- "$@")
+OPTS=$(getopt -o s:d:r: --long select:,dir:,rescale: -n 'parse-options' -- "$@")
 if [ $? != 0 ]; then
   echo "Failed parsing options." >&2
   usage
@@ -23,6 +27,10 @@ while true; do
     dir="$2"
     shift 2
     ;;
+  -r | --rescale)
+    new_width="$2"
+    shift 2
+    ;;
   --)
     shift
     break
@@ -37,6 +45,13 @@ fi
 
 if [ -z ${dir+set} ]; then
   usage
+fi
+
+if [ -z ${new_width+set} ]; then
+  rescale=""
+else
+  # https://trac.ffmpeg.org/wiki/Scaling
+  rescale="-vf \"scale='min(${new_width},iw)':-1\" -sws_flags lanczos"
 fi
 
 batch_temp="batch.sh" && \
@@ -59,7 +74,7 @@ for src_file in %%select%%; do
     echo "Processing \"${src_file}\" => \"${dst_file}\""
     # https://stackoverflow.com/questions/49686244/ffmpeg-too-many-packets-buffered-for-output-stream-01
     ffmpeg -stats -i "${src_file}" \
-      -c:v libx265 -crf 22 -c:a aac -b:a 128k  -max_muxing_queue_size 9999 "${dst_file}"
+      -c:v libx265 -crf 22 -c:a aac -b:a 128k  -max_muxing_queue_size 9999 %%rescale%% "${dst_file}"
 
     echo "Processed: \"${src_file}\" =>  \"${dst_file}\"" >> ${logfile}
 
@@ -71,6 +86,7 @@ rm -- "$0"
 EOF
 
 batch_file="${batch_file//%%select%%/${select}}"
+batch_file="${batch_file//%%rescale%%/${rescale}}"
 #batch_file=$(sed "s,%%select%%,${select},g" <<<"${batch_file}")
 batch_temp_full="${dir}/${batch_temp}"
 echo "${batch_file}" >"${batch_temp_full}"
