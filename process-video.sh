@@ -5,11 +5,11 @@ set -o nounset
 set -o pipefail
 
 usage() {
-  echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext -r|--rescale 1920"
+  echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext -r|--rescale 1920 -i|--deinterlace"
   exit 1
 }
 
-OPTS=$(getopt -o s:d:r: --long select:,dir:,rescale: -n 'parse-options' -- "$@")
+OPTS=$(getopt -o s:d:r:i --long select:,dir:,rescale:,deinterlace -n 'parse-options' -- "$@")
 if [ $? != 0 ]; then
   echo "Failed parsing options." >&2
   usage
@@ -30,6 +30,10 @@ while true; do
   -r | --rescale)
     new_width="$2"
     shift 2
+    ;;
+  -i | --deinterlace)
+    deinterlace="1"
+    shift
     ;;
   --)
     shift
@@ -54,11 +58,25 @@ else
   rescale="-vf \"scale='min(${new_width},iw)':-1\" -sws_flags lanczos"
 fi
 
-batch_temp="batch.sh" && \
-image="cloud.canister.io:5000/vetal/ffmpeg:4.1.3" && \
+if [ -z ${deinterlace+set} ]; then
+  deinterlace_opts=""
+else
+  echo "Performing deinterlace"
+  # https://trac.ffmpeg.org/wiki/Scaling
+  deinterlace_opts="-vf \"nnedi=weights=/data/nnedi3_weights.bin\""
+fi
 
-uid=$(id -u $(whoami)) && \
-gid=$(id -g $(whoami)) && \
+batch_temp="batch.sh" && \
+image="vetalca/ffmpeg:6.1" && \
+
+uid=$(id -u "$(whoami)") && \
+gid=$(id -g "$(whoami)") && \
+
+dest_log="${dir}/compression.log"
+if test -f "${dest_log}"; then
+  echo "\"${dest_log}\" file exists, executed by accident ?"
+  exit 1
+fi
 
 read -r -d '' batch_file <<"EOF"
 #!/usr/bin/env sh
@@ -74,7 +92,7 @@ for src_file in %%select%%; do
     echo "Processing \"${src_file}\" => \"${dst_file}\""
     # https://stackoverflow.com/questions/49686244/ffmpeg-too-many-packets-buffered-for-output-stream-01
     ffmpeg -stats -i "${src_file}" \
-      -c:v libx265 -crf 22 -c:a aac -b:a 128k  -max_muxing_queue_size 9999 %%rescale%% "${dst_file}"
+      -c:v libx265 -crf 22 -c:a aac -b:a 128k  -max_muxing_queue_size 9999 %%rescale%% %%deinterlace_opts%% "${dst_file}"
 
     echo "Processed: \"${src_file}\" =>  \"${dst_file}\"" >> ${logfile}
 
@@ -87,6 +105,7 @@ EOF
 
 batch_file="${batch_file//%%select%%/${select}}"
 batch_file="${batch_file//%%rescale%%/${rescale}}"
+batch_file="${batch_file//%%deinterlace_opts%%/${deinterlace_opts}}"
 #batch_file=$(sed "s,%%select%%,${select},g" <<<"${batch_file}")
 batch_temp_full="${dir}/${batch_temp}"
 echo "${batch_file}" >"${batch_temp_full}"
