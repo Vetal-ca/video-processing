@@ -8,11 +8,13 @@ profiles:
     detection_phase: "shakiness=7:accuracy=15:stepsize=32:mincontrast=0.3:show=0"
     processing_phase: "smoothing=30:zoom=0:optzoom=1:interpol=bicubic"
 
+  # Doesn't work
   shaky3:
     detection_phase: "shakiness=6:accuracy=20:stepsize=16:mincontrast=0.1:show=0"
     processing_phase: "smoothing=15:zoom=1:optzoom=0:interpol=bicubic,unsharp=2:2:0.5:2:2:0.25,vaguedenoiser=threshold=2:method=soft:nsteps=3"
 
   # Concert 4 -shaky4 - second the best!
+  # Cat panning - best
   shaky4:
     detection_phase: "shakiness=4:accuracy=15:stepsize=6:mincontrast=0.15:show=0"
     processing_phase: "smoothing=8:zoom=0:optzoom=1:interpol=bicubic:maxshift=40:maxangle=0.1"
