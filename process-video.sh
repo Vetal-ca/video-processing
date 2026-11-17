@@ -149,11 +149,11 @@ read -r -d '' batch_file <<"EOF" || true
       echo "Processing \"${src_file}\" => \"${dst_file}\""
       # https://stackoverflow.com/questions/49686244/ffmpeg-too-many-packets-buffered-for-output-stream-01
 
-      deshake_transforms="${name}.trf"
+      deshake_transforms="$(printf '%s' "${src_file}" | sha256sum | cut -d' ' -f1 | cut -c1-16).trf"
 
       if [ "%%deshake%%" == "1" ]; then
         echo "Performing deshake, phase 1" >> ${logfile}
-        ffmpeg -i  "${src_file}" -vf vidstabdetect=%%deshake_detection_opts%%:result="${deshake_transforms}" -f null -
+        ffmpeg -i  "${src_file}" -vf "vidstabdetect=%%deshake_detection_opts%%:result=${deshake_transforms}" -f null -
       fi
 
       echo "Performing deshake, phase 2" >> ${logfile}
