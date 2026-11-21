@@ -3,7 +3,7 @@
 set -euo pipefail
 
   usage() {
-    echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext -r|--rescale 1920 -i|--deinterlace -v|--vf --deshake <profile> -e|--encoding h265|av1"
+    echo "Usage: ${0##*/} -d|dir <dir_with_video_files> -s|--select *.ext -r|--rescale 1920 -i|--deinterlace -v|--vf --deshake <profile> -e|--encoding h265|av1 -g|--gpu"
     exit 1
   }
 
@@ -20,7 +20,7 @@ function process_video() {
   batch_template="${this_dir}/batch_template.sh"
 
 
-  opts=$(getopt -o s:d:r:ive: --long select:,dir:,rescale:,deinterlace,vf,deshake:,encoding: -n 'parse-options' -- "$@")
+  opts=$(getopt -o s:d:r:ive:g --long select:,dir:,rescale:,deinterlace,vf,deshake:,encoding:,gpu -n 'parse-options' -- "$@")
   if [ $? != 0 ]; then
     echo "Failed parsing options." >&2
     usage
@@ -36,6 +36,7 @@ function process_video() {
   local deshake
   local deshake_profile
   local encoding="h265"
+  local gpu=""
 
   while true; do
     case "$1" in
@@ -68,6 +69,10 @@ function process_video() {
       encoding="$2"
       shift 2
       ;;
+    -g | --gpu) # NVIDIA NVENC
+      gpu="1"
+      shift
+      ;;
     --)
       shift
       break
@@ -85,19 +90,32 @@ function process_video() {
   fi
 
   local codec_v codec_extra codec_a codec_ext
-  case "${encoding}" in
+  # NVENC: constant quality, slowest preset, 10-bit. -cq is roughly comparable to the CPU -crf
+  local nvenc_opts="-preset p7 -tune hq -rc vbr -b:v 0 -multipass fullres -spatial-aq 1 -temporal-aq 1 -pix_fmt p010le"
+  case "${encoding}${gpu:+-gpu}" in
   h265)
     codec_v="libx265" codec_extra="-crf 22" codec_a="aac" codec_ext="h265.mp4"
     ;;
+  h265-gpu)
+    codec_v="hevc_nvenc" codec_extra="${nvenc_opts} -cq 24" codec_a="aac" codec_ext="h265.mp4"
+    ;;
   av1)
-    # libaom: the vetalca/ffmpeg image is built without libsvtav1
-    codec_v="libaom-av1" codec_extra="-crf 30 -b:v 0 -cpu-used 4 -row-mt 1" codec_a="libopus" codec_ext="av1.mkv"
+    codec_v="libsvtav1" codec_extra="-crf 30 -preset 6" codec_a="libopus" codec_ext="av1.mkv"
+    ;;
+  av1-gpu)
+    codec_v="av1_nvenc" codec_extra="${nvenc_opts} -cq 30" codec_a="libopus" codec_ext="av1.mkv"
     ;;
   *)
     echo "Unknown encoding '${encoding}', expected h265 or av1" >&2
     usage
     ;;
   esac
+
+  # WSL: the Windows NVIDIA driver, no NVIDIA Container Toolkit needed
+  local gpu_opts=()
+  if [ -n "${gpu}" ]; then
+    gpu_opts=(--device /dev/dxg --volume /usr/lib/wsl:/usr/lib/wsl:ro)
+  fi
 
   local rescale
   local deinterlace_opts
@@ -143,7 +161,7 @@ function process_video() {
   fi
 
   batch_temp="batch.sh" && \
-  image="vetalca/ffmpeg:6.1.1" && \
+  image="vetalca/ffmpeg:9.1" && \
 
   uid=$(id -u "$(whoami)") && \
   gid=$(id -g "$(whoami)") && \
@@ -175,7 +193,8 @@ function process_video() {
   chmod +x "${batch_temp_full}" && \
   docker run -d --volume "${dir}":/tmp -w="/tmp" --rm \
     --user "${uid}":"${gid}" \
-    --entrypoint /bin/sh "${image}" --command "./${batch_temp}"
+    "${gpu_opts[@]}" \
+    --entrypoint /bin/sh "${image}" "./${batch_temp}"
 }
 
 process_video "$@"
